@@ -1,63 +1,37 @@
-#!/usr/bin/env python
-
 from enum import Enum
 import abc
 import numpy as np
-import logging
-from path_planner import PathPlanner
 import math
+from get_path import get_waypoint_list
 
+# class Pose(object):
+#     """
+#     Robot pose
+#     """
 
-class LogUtil(object):
-    """
-    Log util
-    """
+#     def __init__(self, position = [], heading = 0):
+#         self.position = np.array(position)
+#         self.heading = heading
 
-    @staticmethod
-    def set_up_logging(log_file_name, logging_level=logging.DEBUG):
-        logging.basicConfig(filename=log_file_name, filemode='w', level=logging_level,
-                            format='%(asctime)s %(message)s')
-        # logging.getLogger().addHandler(logging.StreamHandler())
+class Waypoint(object):
 
-    @staticmethod
-    def log_dict(one_dict, dict_info):
-        logging.debug('--------------Printing {}-----------------'.format(dict_info))
-        for k in one_dict:
-            logging.debug('key: {}, value: {}'.format(k, one_dict[k]))
+    def __init__(self, position = [], heading = 0, curvature = 0):
+        self.position = np.array(position)
+        self.heading = heading
+        self.curvature = curvature
 
-    @staticmethod
-    def log_list(one_list, list_info):
-        logging.debug('--------------Printing {}-----------------'.format(list_info))
-        for val in one_list:
-            logging.debug(val)
+    def __str__(self):
+        return 'Position is {}, heading is {}'.format(self.position, self.heading)
 
+class PathPlanner(object):
 
-class Util(object):
-    """
-    Util class
-    """
+    def create_waypoints(self, waypoint_list):
 
-    @staticmethod
-    def find_insert_place(sorted_list, val):
-        """
-        Use binary search to find the place where the val should be inserted
-        :param sorted_list:
-        :param val:
-        :return:
-        """
+        res = []
+        for waypoint in waypoint_list:
+            res.append(Waypoint(waypoint))
 
-        start, middle, end = 0, 0, len(sorted_list) -1
-        while start <= end:
-            middle = int(start + (end - start) / 2)
-            if val == sorted_list[middle]:
-                return middle
-            if val < sorted_list[middle]:
-                end = middle - 1
-            else:
-                start = middle + 1
-
-        return start
-
+        return res, np.array(waypoint)
 
 class PurePursuit(object):
     """
@@ -84,11 +58,8 @@ class PurePursuit(object):
         self.is_goal_point_reached = False
         self.line_segment, self.total_path_len = self._parametrize_path()
 
-    def control(self, robot):
+    def control(self, robot_pose):
 
-        robot_pose = robot.pose
-        logging.debug('************************************')
-        logging.debug('Is robot near goal point? {}'.format(self.is_goal_point_reached))
         if not self.is_goal_point_reached:
             # if goal point not reached, use pure pursuit controller
             self._update_goal_point(robot_pose)
@@ -97,13 +68,13 @@ class PurePursuit(object):
 
             if dist_to_goal_point < 1e-10:
                 # this means we have reached goal, no control needed
-                logging.debug('Planned control: linear {}, angular {}, robot reaches goal'.format(0, 0))
+                print('Planned control: linear {}, angular {}, robot reaches goal'.format(0, 0))
                 return 0, 0
             else:
                 steer = self.desired_linear_velocity * 2.0 * goal_point_in_local_frame[0] / (dist_to_goal_point * dist_to_goal_point)
                 steer = self.max_angular_velocity if steer > self.max_angular_velocity else steer
 
-                logging.debug('Planned control: linear {}, angular {}, pure pursuit controller'.format(self.desired_linear_velocity, steer))
+                print('Planned control: linear {}, angular {}, pure pursuit controller'.format(self.desired_linear_velocity, steer))
                 return self.desired_linear_velocity, steer
         else:
             # if goal point reached, do not use pure pursuit anymore
@@ -123,11 +94,11 @@ class PurePursuit(object):
                 planned_steer = self.desired_linear_velocity / circular_move_radius * (angle_diff / abs(angle_diff))
                 planned_steer = self.max_angular_velocity if planned_steer > self.max_angular_velocity else planned_steer
 
-                logging.debug('Planned control: linear {}, angular {}, robot in neighborhood of goal'.format(self.desired_linear_velocity, planned_steer))
+                print('Planned control: linear {}, angular {}, robot in neighborhood of goal'.format(self.desired_linear_velocity, planned_steer))
                 return self.desired_linear_velocity, planned_steer
             else:
                 # current robot heading is towards goal postion, move to there directly
-                logging.debug('Planned control: linear {}, angular {}, robot heading points towards goal'.format(self.desired_linear_velocity, 0))
+                print('Planned control: linear {}, angular {}, robot heading points towards goal'.format(self.desired_linear_velocity, 0))
                 return self.desired_linear_velocity, 0
 
     def _update_goal_point(self, robot_pose):
@@ -140,7 +111,7 @@ class PurePursuit(object):
         # start searching the goal point from the nearest point on the path to the current robot position
         goal_point_search_s_coordinate = self._find_nearest_path_point(robot_pose)
         goal_point_search_position = self._find_position_on_path(goal_point_search_s_coordinate)
-        logging.debug('nearest point on the path to robot: {}'.format(goal_point_search_position))
+        print('nearest point on the path to robot: {}'.format(goal_point_search_position))
 
         while np.linalg.norm(goal_point_search_position - robot_pose.position) < self.look_ahead_distance:
             if goal_point_search_s_coordinate + self.goal_point_moveup_dist > self.total_path_len:
@@ -154,11 +125,11 @@ class PurePursuit(object):
         if abs(self.goal_point - self.total_path_len) <= 1e-1:
             self.is_goal_point_reached = True
 
-        logging.debug('Updated goal point: s {}, cartesian {}, robot position: {}'.format(self.goal_point,
+        print('Updated goal point: s {}, cartesian {}, robot position: {}'.format(self.goal_point,
                                                                                           goal_point_search_position,
                                                                                           robot_pose.position))
         dist_between_goal_robot = np.linalg.norm(goal_point_search_position - robot_pose.position)
-        logging.warning('Dist between goal point and robot position {}, look_ahead_distance {}'.format(
+        print('Dist between goal point and robot position {}, look_ahead_distance {}'.format(
             dist_between_goal_robot, self.look_ahead_distance))
 
     def _find_nearest_path_point(self, robot_pose):
@@ -223,7 +194,7 @@ class PurePursuit(object):
 
         # Since length_moved is guaranteed smaller than self.line_segment[-1], the returned insertio index will not
         # out of range
-        line_seg_index = Util.find_insert_place(self.line_segment, length_moved)
+        line_seg_index = self.find_insert_place(self.line_segment, length_moved)
         dist_to_end_point_of_line_seg = self.line_segment[line_seg_index] - length_moved
 
         # unit vector pointing to the start point of the line segment
@@ -265,10 +236,31 @@ class PurePursuit(object):
 
         return coordinate_in_robot_frame[:2]
 
+    def find_insert_place(self, sorted_list, val):
+        """
+        Use binary search to find the place where the val should be inserted
+        :param sorted_list:
+        :param val:
+        :return:
+        """
+
+        start, middle, end = 0, 0, len(sorted_list) -1
+        while start <= end:
+            middle = int(start + (end - start) / 2)
+            if val == sorted_list[middle]:
+                return middle
+            if val < sorted_list[middle]:
+                end = middle - 1
+            else:
+                start = middle + 1
+
+        return start
+
 if __name__ == '__main__':
-    waypoint_list = [[0, 0], [1, 1], [2, 2], [3, 3]]
-    waypoints, goal = PathPlanner.create_waypoints(waypoint_list)
+    waypoint_list = get_waypoint_list(n=50)
+    planer = PathPlanner()
+    waypoints, goal = planer.create_waypoints(waypoint_list)
     controller = PurePursuit(waypoints, 10, 5, 5)
 
     print(('Test find position based on s coordinate, position is {}'.format(controller._find_position_on_path(np.math.sqrt(3)))))
-    print(('Test binary search insertion place function: insertion place is {}'.format(Util.find_insert_place(list(range(10)), 10))))
+    print(('Test binary search insertion place function: insertion place is {}'.format(controller.find_insert_place(list(range(10)), 10))))
